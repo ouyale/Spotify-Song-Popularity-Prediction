@@ -241,8 +241,8 @@ df['chill_score'] = (df['acous'] + (100 - df['nrgy']) + (100 - df['dnce'])) / 3
 
 ```bash
 # Clone the repository
-git clone https://github.com/ouyale/Spotify-Song-Popularity-Prediction.git
-cd Spotify-Song-Popularity-Prediction
+git clone https://github.com/ouyale/Spotify-Song-Popularity-Prediction-v2.git
+cd Spotify-Song-Popularity-Prediction-v2
 
 # Install dependencies
 pip install pandas numpy scikit-learn matplotlib seaborn jupyter
