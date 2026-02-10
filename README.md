@@ -31,11 +31,7 @@
 
 ## Problem Statement
 
-The goal of this project is to predict the popularity score of Spotify songs based on their audio characteristics and genre information. This is a **regression task** where:
-
-- **Target Variable:** `pop` (popularity score, 0-100)
-- **Features:** 9 numerical audio features + 1 categorical genre
-- **Challenge:** Limited dataset size (453 training samples) and high genre cardinality (149 unique genres)
+What makes a song popular on Spotify? This project predicts song **popularity scores** using audio features and metadata from the [CS-985-6 Spotify Regression Problem 2026](https://www.kaggle.com/competitions/cs-985-6-spotify-regression-problem-2026) Kaggle competition. Through **4 iterative approaches**, each building on insights from the previous one, the project systematically improves predictions by exploring genre encoding strategies and feature engineering techniques.
 
 ---
 
@@ -43,7 +39,7 @@ The goal of this project is to predict the popularity score of Spotify songs bas
 
 | Property | Details |
 |----------|---------|
-| **Source** | University of Strathclyde CS985/6 Machine Learning Course |
+| **Source** | [Kaggle Competition](https://www.kaggle.com/competitions/cs-985-6-spotify-regression-problem-2026) |
 | **Training Size** | 453 songs |
 | **Test Size** | 114 songs |
 | **Features** | 9 numerical audio features + 1 categorical genre |
