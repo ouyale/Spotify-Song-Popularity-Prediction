@@ -18,7 +18,7 @@
 ## Table of Contents
 
 - [Problem Statement](#problem-statement)
-- [Project Flow](#project-flow)
+- [Project Workflow](#project-workflow)
 - [Dataset](#dataset)
 - [Methodology](#methodology)
 - [Approaches](#approaches)
@@ -37,26 +37,15 @@ What makes a song popular on Spotify? This project predicts song **popularity sc
 
 ---
 
-## Project Flow
+## Project Workflow
 
 The project follows an iterative improvement approach, where each step builds on lessons learned from the previous one:
 
-```
-+------------------+     +------------------+     +------------------+
-|    BASELINE      |     |   APPROACH 1     |     |   APPROACH 2     |
-|   EDA & Basic    | --> | Genre Encoding   | --> | Hybrid Genre     |
-|     Models       |     | (Top 15 One-Hot) |     |    Grouping      |
-| CV RMSE: 11.27   |     | CV RMSE: 10.93   |     | CV RMSE: 11.05   |
-+------------------+     +------------------+     +------------------+
-                                                          |
-                                                          v
-+------------------+     +------------------+     +------------------+
-|   APPROACH 4     |     |  APPROACH 3 v2   |     |  APPROACH 3 v1   |
-|    Ensemble      | <-- |  Leakage-Safe    | <-- |    Feature       |
-|    Methods       |     |    Pipeline      |     |   Engineering    |
-| CV RMSE: 10.43   |     | CV RMSE: 10.42   |     | CV RMSE: 10.80   |
-+------------------+     +------------------+     +------------------+
-```
+![Project Workflow](figures/workflow_diagram.png)
+
+### Approach Progression
+
+![Approach Progression](figures/approach_progression.png)
 
 **Key Insight:** Better CV scores don't always mean better Kaggle scores. The test set distribution matters!
 
@@ -74,22 +63,7 @@ The project follows an iterative improvement approach, where each step builds on
 
 ### Feature Overview
 
-```
-NUMERICAL FEATURES (9)              CATEGORICAL FEATURE (1)
-+---------------------------+       +---------------------------+
-| bpm    | Tempo (BPM)      |       | top genre                 |
-| nrgy   | Energy (0-100)   |       |   - 149 unique genres     |
-| dnce   | Danceability     |       |   - High cardinality      |
-| dB     | Loudness         |       |   - Requires encoding     |
-| live   | Liveness         |       +---------------------------+
-| val    | Valence/Mood     |
-| dur    | Duration (sec)   |
-| acous  | Acousticness     |
-| spch   | Speechiness      |
-+---------------------------+
-```
-
-### Feature Details
+![Feature Breakdown](figures/feature_breakdown.png)
 
 | Feature | Description | Range | Notes |
 |---------|-------------|-------|-------|
@@ -107,22 +81,6 @@ NUMERICAL FEATURES (9)              CATEGORICAL FEATURE (1)
 ---
 
 ## Methodology
-
-### Overview
-
-```
-+-------------+     +----------------+     +------------------+
-|   DATA      |     |   FEATURE      |     |     MODEL        |
-|  LOADING    | --> |  ENGINEERING   | --> |   SELECTION      |
-+-------------+     +----------------+     +------------------+
-      |                    |                       |
-      v                    v                       v
-  - Handle missing    - Interactions         - 5-fold CV
-  - Clean genres      - Ratios               - Compare models
-  - Split data        - Polynomial           - Tune hyperparams
-                      - Binning
-                      - Composites
-```
 
 ### 1. Exploratory Data Analysis
 - Analyzed distribution of popularity scores (target variable)
@@ -142,22 +100,11 @@ Created 25 engineered features across 5 categories:
 
 | Category | Features | Example |
 |----------|----------|---------|
-| **Interactions** | 6 | energy x danceability |
+| **Interactions** | 6 | energy × danceability |
 | **Ratios** | 4 | energy per BPM |
 | **Polynomial** | 4 | duration squared |
 | **Binning** | 8 | is_acoustic, bpm_slow |
 | **Composites** | 3 | party_score, chill_score |
-
-```
-FEATURE BREAKDOWN
-+------------------+
-| Numerical:    9  |  Original audio features
-| Genre:       16  |  One-hot encoded (top 15 + other)
-| Engineered:  25  |  Interactions, ratios, etc.
-+------------------+
-| TOTAL:       50  |
-+------------------+
-```
 
 ### 4. Data Leakage Prevention
 
@@ -169,24 +116,7 @@ FEATURE BREAKDOWN
 - Compute correlations inside each CV fold
 - Apply all preprocessing inside the cross-validation loop
 
-```
-WRONG (Leaky):                    CORRECT (Leakage-Safe):
-+------------------+              +------------------+
-| Full Dataset     |              | Full Dataset     |
-| - Correlations   |              +------------------+
-| - Top genres     |                      |
-+------------------+              +-------+-------+
-        |                         |               |
-+-------+-------+           +-----v-----+   +-----v-----+
-|               |           | Train Fold|   | Val Fold  |
-| Train | Val   |           +-----------+   +-----------+
-+-------+-------+           | Correlations  | Apply same
-        |                   | Top genres    | encoding
-        v                   | Encoding      |
-    Model                   +------+--------+
-                                   v
-                                 Model
-```
+![Data Leakage Impact](figures/leakage_impact.png)
 
 ### 5. Model Selection and Evaluation
 
@@ -247,37 +177,15 @@ WRONG (Leaky):                    CORRECT (Leakage-Safe):
 - Blending: Weighted average with custom weights
 - **CV RMSE: 10.43** (Heavy ElasticNet blend)
 
-```
-ENSEMBLE METHODS TESTED
-+------------------+----------------------------------+------------+
-| Method           | Description                      | CV RMSE    |
-+------------------+----------------------------------+------------+
-| Voting (Linear)  | Ridge + Lasso + ElasticNet       | 10.49      |
-| Voting (All 5)   | All models equal weight          | 10.51      |
-| Stacking         | RF + GB -> Ridge meta-learner    | 11.17      |
-| Blend (Heavy EN) | 50% EN + 15% Ridge + 15% Lasso   | 10.43      |
-| Blend (EN + RF)  | 60% ElasticNet + 40% RF          | 10.46      |
-+------------------+----------------------------------+------------+
-```
+![Ensemble Methods Comparison](figures/ensemble_comparison.png)
 
 ---
 
 ## Results
 
-### Model Comparison (Approach 3 v2)
+### Model Comparison
 
-```
-CV RMSE COMPARISON (lower is better)
-|
-|  ElasticNet    |========== 10.42
-|  Lasso         |=========== 10.45
-|  Ridge         |============ 10.63
-|  Random Forest |=============== 11.10
-|  Grad Boosting |================== 11.72
-|
-+---------------------------------------------------> RMSE
-                 10.0    10.5    11.0    11.5    12.0
-```
+![Model Comparison](figures/model_comparison.png)
 
 | Model | CV RMSE | CV R-squared | Type |
 |-------|---------|--------------|------|
@@ -287,21 +195,17 @@ CV RMSE COMPARISON (lower is better)
 | Random Forest | 11.10 | 0.28 | Tree |
 | Gradient Boosting | 11.72 | 0.20 | Tree |
 
-### All Approaches Summary
+### Linear vs Tree-Based Models
 
-```
-APPROACH PROGRESSION
-|
-| Baseline         |================= 11.27
-| Approach 2       |============== 11.05
-| Approach 1       |=========== 10.93
-| Approach 3 v1    |========= 10.80
-| Approach 4       |======= 10.43
-| Approach 3 v2    |======= 10.42  <-- Best
-|
-+---------------------------------------------------> CV RMSE
-                   10.0    10.5    11.0    11.5
-```
+![Linear vs Tree](figures/linear_vs_tree.png)
+
+### Model Explanatory Power
+
+![R-squared](figures/r_squared.png)
+
+The model explains **37% of the variance** in song popularity. The remaining 63% is influenced by factors not captured in our audio features (e.g., artist fame, marketing, playlist placements, viral trends).
+
+### All Approaches Summary
 
 | Approach | Best Model | CV RMSE | Key Change |
 |----------|------------|---------|------------|
@@ -326,16 +230,6 @@ The clean pipeline produced more reliable estimates.
 
 ### 2. Linear Models Beat Tree-Based Models
 
-```
-LINEAR MODELS              TREE-BASED MODELS
-+------------------+       +------------------+
-| ElasticNet: 10.42|       | RF:        11.10 |
-| Lasso:      10.45|       | GB:        11.72 |
-| Ridge:      10.63|       +------------------+
-+------------------+
-     WINNERS                    LOSERS
-```
-
 **Why?** With only 453 samples and 50 features:
 - Linear models generalize better
 - Trees tend to overfit
@@ -343,40 +237,19 @@ LINEAR MODELS              TREE-BASED MODELS
 
 ### 3. Why ElasticNet Works Best
 
-```
-ElasticNet = L1 (Lasso) + L2 (Ridge)
+ElasticNet combines L1 (Lasso) + L2 (Ridge) regularization:
 
-L1 Regularization          L2 Regularization
-+------------------+       +------------------+
-| Feature Selection|       | Handles Correlated|
-| Sparse coeffs    |       | Features          |
-| Some weights = 0 |       | Shrinks all       |
-+------------------+       +------------------+
-         \                        /
-          \                      /
-           v                    v
-         +----------------------+
-         |    ElasticNet        |
-         | Best of both worlds  |
-         | CV RMSE: 10.42       |
-         +----------------------+
-```
+| L1 Regularization | L2 Regularization |
+|-------------------|-------------------|
+| Feature Selection | Handles Correlated Features |
+| Sparse coefficients | Shrinks all coefficients |
+| Some weights = 0 | All weights small |
+
+**ElasticNet = Best of both worlds**
 
 ### 4. Feature Importance
 
-Based on correlation analysis and coefficient magnitudes:
-
-```
-TOP FEATURES BY IMPORTANCE
-|
-| dur (duration)     |====================
-| acous (acoustic)   |==================
-| nrgy (energy)      |============
-| dnce (danceability)|==========
-| dB (loudness)      |========
-| Genre features     |====  (~10% total)
-|
-```
+![Feature Importance](figures/feature_importance.png)
 
 - **Duration** and **acousticness** had strongest relationships
 - Genre contributed ~10% of predictive power
@@ -385,17 +258,6 @@ TOP FEATURES BY IMPORTANCE
 ### 5. CV Score vs Kaggle Score
 
 **Important Lesson:** Better CV doesn't guarantee better Kaggle performance!
-
-```
-+------------------+     +------------------+
-|   CV RMSE        |     | Kaggle RMSE      |
-|   (Training)     | =/= |   (Test Set)     |
-+------------------+     +------------------+
-        |                        |
-        v                        v
-   Model selection          Actual performance
-   on known data            on unseen data
-```
 
 Possible reasons for mismatch:
 - Test set has different distribution
@@ -422,48 +284,44 @@ Possible reasons for mismatch:
 
 ```
 Spotify-Song-Popularity-Prediction/
-|
-|-- data/
-|   |-- CS98XRegressionTrain.csv      # Training data (453 songs)
-|   |-- CS98XRegressionTest.csv       # Test data (114 songs)
-|
-|-- spotify_popularity_prediction.ipynb    # Baseline: EDA and basic models
-|-- approach1_genre_separate.ipynb         # Top 15 genres one-hot encoding
-|-- approach2_genre_hybrid.ipynb           # Semantic genre grouping
-|-- approach3_feature_engineering.ipynb    # Feature engineering (v1)
-|-- approach3_feature_engineering_v2.ipynb # Leakage-safe pipeline (v2)
-|-- approach4_ensemble_methods.ipynb       # Voting, stacking, blending
-|
-|-- requirements.txt                       # Python dependencies
-|-- README.md                              # Project documentation
+│
+├── data/
+│   ├── CS98XRegressionTrain.csv      # Training data (453 songs)
+│   └── CS98XRegressionTest.csv       # Test data (114 songs)
+│
+├── figures/                          # Visualization images
+│   ├── approach_progression.png
+│   ├── model_comparison.png
+│   ├── feature_breakdown.png
+│   ├── ensemble_comparison.png
+│   ├── linear_vs_tree.png
+│   ├── leakage_impact.png
+│   ├── r_squared.png
+│   ├── feature_importance.png
+│   └── workflow_diagram.png
+│
+├── spotify_popularity_prediction.ipynb    # Baseline: EDA and basic models
+├── approach1_genre_separate.ipynb         # Top 15 genres one-hot encoding
+├── approach2_genre_hybrid.ipynb           # Semantic genre grouping
+├── approach3_feature_engineering.ipynb    # Feature engineering (v1)
+├── approach3_feature_engineering_v2.ipynb # Leakage-safe pipeline (v2)
+├── approach4_ensemble_methods.ipynb       # Voting, stacking, blending
+│
+├── generate_readme_figures.py             # Script to generate figures
+├── requirements.txt                       # Python dependencies
+└── README.md                              # Project documentation
 ```
 
 ### Notebook Progression
 
-```
-START HERE
-    |
-    v
-[spotify_popularity_prediction.ipynb] --> Understand the data
-    |
-    v
-[approach1_genre_separate.ipynb] --> Learn genre encoding
-    |
-    v
-[approach2_genre_hybrid.ipynb] --> Try semantic grouping
-    |
-    v
-[approach3_feature_engineering.ipynb] --> Add engineered features
-    |
-    v
-[approach3_feature_engineering_v2.ipynb] --> Fix data leakage
-    |
-    v
-[approach4_ensemble_methods.ipynb] --> Combine models
-    |
-    v
-  DONE
-```
+**Recommended reading order:**
+
+1. `spotify_popularity_prediction.ipynb` → Understand the data
+2. `approach1_genre_separate.ipynb` → Learn genre encoding
+3. `approach2_genre_hybrid.ipynb` → Try semantic grouping
+4. `approach3_feature_engineering.ipynb` → Add engineered features
+5. `approach3_feature_engineering_v2.ipynb` → Fix data leakage
+6. `approach4_ensemble_methods.ipynb` → Combine models
 
 ---
 
