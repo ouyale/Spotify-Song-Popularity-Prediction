@@ -3,90 +3,73 @@
 ![Python](https://img.shields.io/badge/Python-3.12-blue?logo=python)
 ![Scikit-learn](https://img.shields.io/badge/Scikit--learn-1.4-orange?logo=scikit-learn)
 ![CatBoost](https://img.shields.io/badge/CatBoost-1.2-yellow)
-![Status](https://img.shields.io/badge/Status-Completed-brightgreen)
 ![Kaggle RMSE](https://img.shields.io/badge/Kaggle_RMSE-7.110-success)
 ![OOF RMSE](https://img.shields.io/badge/OOF_RMSE-8.704-blue)
 
-Predicting Spotify song popularity using audio features, genre information and a stacking ensemble combined with CatBoost native text processing. Final submission achieved **Kaggle RMSE 7.110** on the held-out leaderboard.
+Can you predict how popular a song will be just from its audio fingerprint? I built a stacking ensemble blended with CatBoost native text processing to find out -- and landed a **Kaggle RMSE of 7.110** on the held-out leaderboard.
 
 ---
 
 ## Table of Contents
 
-- [Problem Statement](#problem-statement)
+- [The Problem](#the-problem)
 - [Dataset](#dataset)
-- [Pipeline Overview](#pipeline-overview)
 - [Exploratory Data Analysis](#exploratory-data-analysis)
 - [Feature Engineering](#feature-engineering)
 - [Modelling](#modelling)
 - [Results](#results)
 - [Project Structure](#project-structure)
-- [How to Run](#how-to-run)
-- [Author](#author)
+- [Running the Notebook](#running-the-notebook)
 
 ---
 
-## Problem Statement
+## The Problem
 
-Given a dataset of 453 Spotify songs with audio features and genre labels, the goal is to predict each song's **popularity score** (0-100). The competition metric is Root Mean Squared Error (RMSE). The key challenges are:
+Predict a song's popularity score (0-100) from its audio features. The competition metric is RMSE.
 
-- Small dataset (453 training samples) requiring careful regularisation
-- High-cardinality genre column (100+ unique values) needing robust encoding
-- Risk of data leakage if preprocessing is not strictly fold-scoped
+A few things make this harder than it looks:
+
+- **Small dataset.** Only 453 training songs. You can't just throw a large model at it and expect it to generalise -- every design choice matters.
+- **High-cardinality genre column.** 100+ unique genre strings, with large chunks missing. How you encode this has a big impact on performance.
+- **Leakage risk.** Any preprocessing step that touches target values (e.g. mean encoding) has to be computed strictly within each training fold, otherwise your local CV score flatters you and Kaggle tells the truth.
 
 ---
 
 ## Dataset
 
-| Property | Details |
+| | |
 |---|---|
-| Source | [Kaggle CS-985-6 Spotify Regression 2026](https://www.kaggle.com/competitions/cs-985-6-spotify-regression-problem-2026) |
-| Training size | 453 songs |
-| Test size | 114 songs |
-| Target | Popularity score (0 to 100) |
+| Competition | [Kaggle CS-985-6 Spotify Regression 2026](https://www.kaggle.com/competitions/cs-985-6-spotify-regression-problem-2026) |
+| Train | 453 songs |
+| Test | 114 songs |
+| Target | `pop` -- popularity score, 0 to 100 |
 
-### Audio Features
-
-| Feature | Description |
+| Feature | What it captures |
 |---|---|
-| `bpm` | Beats per minute (tempo) |
-| `nrgy` | Energy level (0-100) |
-| `dnce` | Danceability (0-100) |
-| `dB` | Loudness in decibels |
-| `live` | Liveness (0-100) |
-| `val` | Valence, musical positivity (0-100) |
-| `dur` | Duration in seconds |
-| `acous` | Acousticness (0-100) |
-| `spch` | Speechiness (0-100) |
-| `top genre` | Genre string (100+ unique values) |
-
----
-
-## Pipeline Overview
-
-The final pipeline has four main stages:
-
-**1. Data Loading and Swap Guard** -- a helper checks whether the target column `pop` is in the expected file and swaps train/test if needed, guarding against accidental argument reversal.
-
-**2. Preprocessing inside each fold** -- genre imputation, Leave-One-Out (LOO) encoding, one-hot dummies and all feature engineering are fitted on fold-train only and applied to fold-validation, eliminating data leakage.
-
-**3. Stacking ensemble** -- 10 diverse base models (Ridge, Lasso, ElasticNet, Random Forest, Extra Trees, Gradient Boosting, HistGradientBoosting, XGBoost, LightGBM, SVR) generate out-of-fold predictions that an Extra Trees meta-learner combines.
-
-**4. CatBoost with native text** -- 8 CatBoost variants (4 random seeds x 2 text-processing modes) process the raw genre string directly. Their averaged predictions are blended with the stacking output at a 25/75 ratio.
+| `bpm` | Tempo |
+| `nrgy` | Energy |
+| `dnce` | Danceability |
+| `dB` | Loudness |
+| `live` | Liveness |
+| `val` | Valence (musical positivity) |
+| `dur` | Duration |
+| `acous` | Acousticness |
+| `spch` | Speechiness |
+| `top genre` | Genre string, 100+ unique values |
 
 ---
 
 ## Exploratory Data Analysis
 
-### Feature Distributions and Target
+### Feature distributions
 
-Distributions of all audio features plotted against the popularity target reveal which features have the strongest linear relationships.
+The first thing I looked at was the distribution of every audio feature and how it relates to popularity. Most features are not normally distributed -- energy and danceability skew high, speechiness is heavily right-skewed -- which informed both the model choices and the feature engineering.
 
 ![Feature Exploration](final_01_exploration.png)
 
-### Correlations with Popularity
+### Correlations with popularity
 
-After computing Spearman correlations with the target inside each fold, duration and acousticness consistently appear as the strongest predictors.
+I computed Spearman correlations (rather than Pearson) to handle the non-linear relationships and outliers. Duration and acousticness came up consistently as the strongest correlates across folds. Energy, danceability and valence had weaker and more variable relationships -- useful context for why a linear model alone isn't enough here.
 
 ![Correlations](final_02_correlations.png)
 
@@ -94,69 +77,71 @@ After computing Spearman correlations with the target inside each fold, duration
 
 ## Feature Engineering
 
-Features were built in three groups, all computed strictly inside each cross-validation fold:
+All features were computed inside each cross-validation fold. Nothing touched the validation set until after the fold-train encoders were fitted.
 
-**Interaction terms** -- multiplicative combinations that capture joint effects (e.g. energy x danceability for party tracks, acousticness x valence for relaxed songs).
+**Interaction terms.** Products of feature pairs that should co-vary: energy x danceability (party-track signal), acousticness x valence (mellow-song signal), loudness x energy (production intensity), and a few others. These give linear models access to non-linear structure without needing a tree.
 
-**Temporal and decade features** -- song release year is binned into decades. Recency is encoded as years since 2000. These capture how chart norms shift over time.
+**Decade and recency.** Songs from the 80s, 90s and 2000s have very different popularity distributions -- partly because of how Spotify weights recent streams. I binned release year into decades and added a raw recency score (years since 2000). This gives the model a sense of era rather than treating a 1985 song the same as a 2023 one.
 
-**Artist and genre flags** -- binary flags for artists with multiple entries in the dataset (high-volume artists tend to have more consistent popularity). Genre-like combination flags detect clusters such as "dance pop" or "hip hop" that behave differently from their parent genres.
+**Artist flags.** A binary flag for artists who appear more than once in the training set. Artists with multiple entries tend to cluster in tighter popularity ranges, so this flag helps the model treat them differently from one-off appearances.
 
-**LOO genre encoding** -- Leave-One-Out mean-target encoding replaces the raw genre string with a smoothed mean popularity per genre, computed only on fold-train rows. This avoids leakage while preserving genre signal far better than one-hot encoding for high-cardinality text.
+**Genre combination flags.** Some genre strings like "dance pop" or "hip hop" behave differently from their parent genre groupings even when the LOO encoding assigns them similar values. Binary flags for the most common multi-word genre patterns added a small but consistent signal.
+
+**LOO genre encoding.** One-hot encoding 100+ genres creates a sparse, leaky mess. Instead, I replaced each genre with its mean popularity across fold-train rows only, with additive smoothing to handle rare genres. One continuous feature, no leakage, far more signal than dummy variables.
 
 ---
 
 ## Modelling
 
-### Base Models
+The full pipeline runs inside a 5-fold cross-validation loop.
 
-Ten base models were chosen to cover four model families, ensuring diverse inductive biases in the stacking feature matrix:
+### Why stacking?
+
+On a 453-sample dataset, no single model is going to dominate. A stacking ensemble lets you get the best of multiple model families: the regularisation of linear models, the interaction-capturing of tree ensembles, and the sequential error correction of boosting -- all combined by a meta-learner that learns which model to trust in which region of the feature space.
+
+### Base models
+
+I deliberately picked one or two models from each of four different families so the meta-learner has genuinely diverse signals to work with, not just ten variations of the same approach.
 
 | Family | Models | Why |
 |---|---|---|
-| Linear | Ridge, Lasso, ElasticNet | Strong baseline on small datasets; complementary regularisation |
+| Linear | Ridge, Lasso, ElasticNet | Hard to beat on small datasets; each regularises differently |
 | Tree ensembles | Random Forest, Extra Trees, HistGradientBoosting | Non-linear interactions; robust to outliers |
-| Boosting | XGBoost, LightGBM, Gradient Boosting | Sequential error correction; historically strong on tabular data |
-| Kernel | SVR (RBF) | Captures non-linear structure in a different feature space |
+| Boosting | XGBoost, LightGBM, Gradient Boosting | Strong on tabular data; sequential error correction |
+| Kernel | SVR (RBF) | Sees the feature space through a completely different lens |
 
 ### Stacking
 
-Out-of-fold predictions from all 10 base models form a meta-feature matrix. An Extra Trees meta-learner is trained on this matrix to learn which base models to trust and in which regions of the feature space.
+The 10 base models each produce out-of-fold predictions, giving a 453 x 10 OOF matrix. An Extra Trees meta-learner trains on that matrix to learn how to combine them. At test time, each base model is retrained on the full training set, their predictions are stacked, and the meta-learner produces the final output.
 
-### CatBoost
+### CatBoost with native text
 
-CatBoost processes the raw `top genre` text column natively using its built-in text feature support (bag-of-words and TF-IDF modes). Eight variants are averaged to reduce variance from random seed effects.
+The genre column is a mess: high cardinality, missing values, multi-word strings. CatBoost's built-in text pipeline handles it directly -- it tokenises the raw string and builds bag-of-words and TF-IDF representations internally. I ran 4 random seeds across both text modes (8 variants total) and averaged their predictions. This consistently outperformed the stacking ensemble on its own, particularly on songs from uncommon genres.
 
-### Blending
+### Blend sweep
 
-The final prediction is a weighted blend:
-
-```
-prediction = 0.25 x stacking + 0.75 x CatBoost
-```
-
-The 25/75 ratio was selected by sweeping blend weights on out-of-fold predictions.
+Rather than picking a blend ratio by intuition, I swept from 0% to 100% stacking in 5% steps, using OOF predictions to evaluate each ratio without touching the test set.
 
 ![Blend Results](final_03_blend_results.png)
+
+**25% stacking + 75% CatBoost** hit the lowest OOF RMSE. The reasoning makes sense in hindsight: CatBoost's native text handling extracts more from the genre string than LOO encoding can, but the stacking ensemble's diversity still adds value at the margin -- just not enough to justify weighting it equally.
 
 ---
 
 ## Results
 
-### Final Performance
-
-| Metric | OOF (local) | Kaggle (leaderboard) |
+| | Local OOF | Kaggle leaderboard |
 |---|---|---|
 | RMSE | 8.7040 | 7.1100 |
 | R-squared | 58.2% | -- |
 
-The gap between OOF and Kaggle RMSE is positive (Kaggle is better), suggesting the model generalises well and the test set may be slightly easier than the training folds.
+Kaggle RMSE is lower than local OOF, which is a good sign. It means the model is genuinely generalising rather than just overfitting the training folds. If the leakage guard hadn't been in place, you'd typically see the opposite pattern.
 
-### Overfitting Check
-
-Training RMSE per fold versus validation RMSE confirm no severe overfitting. The gap between training and validation is consistent across all five folds.
+### Overfitting check
 
 ![Overfitting Check](final_05_overfitting_check.png)
+
+Training vs validation RMSE per fold is consistent across all five folds. No fold is collapsing or showing an unusual spike -- the model is stable.
 
 ---
 
@@ -166,56 +151,30 @@ Training RMSE per fold versus validation RMSE confirm no severe overfitting. The
 Spotify-Song-Popularity-Prediction/
 |
 |-- data/
-|   |-- CS98XRegressionTrain.csv      # Training data (453 songs)
-|   |-- CS98XRegressionTest.csv       # Test data (114 songs)
+|   |-- CS98XRegressionTrain.csv
+|   |-- CS98XRegressionTest.csv
 |
 |-- spotify_final/
-|   |-- FINAL_regression.ipynb        # Full regression pipeline (executed)
+|   |-- FINAL_regression.ipynb    # Full executed pipeline
 |
-|-- FINAL_combined.ipynb              # Combined regression + classification report notebook
-|-- FINAL_combined_with_code.pdf      # Submitted report PDF
-|-- submission_final.csv              # Best Kaggle submission (RMSE 7.110)
+|-- submission_final.csv          # Best Kaggle submission (RMSE 7.110)
 |
-|-- final_01_exploration.png          # EDA charts
-|-- final_02_correlations.png         # Correlation analysis
-|-- final_03_blend_results.png        # Blend sweep results
-|-- final_05_overfitting_check.png    # Overfitting diagnostic
+|-- final_01_exploration.png
+|-- final_02_correlations.png
+|-- final_03_blend_results.png
+|-- final_05_overfitting_check.png
 |
 |-- README.md
 ```
 
 ---
 
-## How to Run
-
-### 1. Clone the Repository
+## Running the Notebook
 
 ```bash
 git clone https://github.com/ouyale/Spotify-Song-Popularity-Prediction.git
 cd Spotify-Song-Popularity-Prediction
-```
-
-### 2. Install Dependencies
-
-```bash
 pip install numpy pandas scikit-learn xgboost lightgbm catboost matplotlib seaborn jupyter
 ```
 
-### 3. Run the Notebook
-
-Open `spotify_final/FINAL_regression.ipynb` and run all cells. The notebook will:
-
-1. Load and validate the data
-2. Run 5-fold cross-validation with the full preprocessing pipeline inside each fold
-3. Train the stacking ensemble and 8 CatBoost variants
-4. Sweep blend weights and select the best ratio
-5. Generate `submission_final.csv` for Kaggle upload
-
----
-
-## Author
-
-**Barbara Weroba Obayi**
-
-[![GitHub](https://img.shields.io/badge/GitHub-ouyale-black?logo=github)](https://github.com/ouyale)
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-blue?logo=linkedin)](https://www.linkedin.com/in/barbara-obayi/)
+Open `spotify_final/FINAL_regression.ipynb` and run all cells. It trains the full pipeline, prints OOF metrics per fold, sweeps blend weights and writes `submission_final.csv`.
